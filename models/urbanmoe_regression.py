@@ -150,6 +150,7 @@ class UrbanMoE_Regression(nn.Module):
         outputs_img, outputs_txt = [], []
         task_pairs = [(i, j) for i in range(self.num_tasks) for j in range(i + 1, self.num_tasks)]
 
+        # TODO: threshold=0 keeps every expert, so the gating is dense, not sparse
         for task_idx in range(self.num_tasks):
             gate_img = torch.einsum("bi,ie->be", image_features, self.gate_kernels_image[task_idx]) + self.gate_bias_image[task_idx]
             gate_img = self.sparse_softmax(gate_img, mode="threshold", threshold=0)
@@ -169,6 +170,7 @@ class UrbanMoE_Regression(nn.Module):
         if self.training and targets is not None:
             reg_loss = sum([F.mse_loss(outputs[i], targets[:, i].unsqueeze(1)) for i in range(self.num_tasks)])
             contr_loss = sum([contrastive_loss(outputs_img[i], outputs_txt[i]) for i in range(self.num_tasks)])
+            # TODO: contrastive loss is zero-weighted, so it has no effect on training
             total_loss = reg_loss + 0 * contr_loss
             return torch.cat(outputs, dim=1), total_loss
 

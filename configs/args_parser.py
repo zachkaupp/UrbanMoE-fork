@@ -51,7 +51,7 @@ def create_args():
     parser.add_argument("--indicator3", type=str, default="light_value")
 
 
-    parser.add_argument("--use_poi", type=bool, default=True)
+    parser.add_argument("--use_poi", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--poi_dim", type=int, default=0)
 
     return parser.parse_args()

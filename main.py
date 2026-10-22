@@ -78,6 +78,7 @@ def main():
     for epoch in range(args.epoch_num):
         train_one_epoch(model, optimizer, data, epoch, args, logger, writer)
         metrics = evaluate(model, data, args, logger, split="val")
+        # TODO: best checkpoint is chosen on Carbon val MSE only, ignoring Population and Light
         if metrics["mse_Carbon"] < best_val:
             save_checkpoint(model, optimizer, epoch, os.path.join(args.checkpoint_dir, "best.pt"), best=True)
             best_val = metrics["mse_Carbon"]

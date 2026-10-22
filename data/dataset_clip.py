@@ -59,6 +59,7 @@ class getDataset(Dataset):
 
             self.region_labels.append(region)
 
+        # TODO: this mapping is built per split, so region ids differ between train/val/test
         self.unique_regions = sorted(set(self.region_labels))
         self.region_to_id = {r: i for i, r in enumerate(self.unique_regions)}
         self.region_ids = torch.tensor([self.region_to_id[r] for r in self.region_labels], dtype=torch.long)
