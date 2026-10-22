@@ -59,7 +59,10 @@ class getDataset(Dataset):
 
             self.region_labels.append(region)
 
-        # TODO: this mapping is built per split, so region ids differ between train/val/test
+        # TODO: ids are built per split, so the same id is a different region in train/val/test.
+        # A shared mapping alone won't help: val/test region embeddings would never be trained
+        # (random split, only train labels). The paper doesn't explain how it handles this and
+        # lists inductive/unseen regions as future work.
         self.unique_regions = sorted(set(self.region_labels))
         self.region_to_id = {r: i for i, r in enumerate(self.unique_regions)}
         self.region_ids = torch.tensor([self.region_to_id[r] for r in self.region_labels], dtype=torch.long)

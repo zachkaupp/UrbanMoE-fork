@@ -1,5 +1,8 @@
 CLAUDE.md
 .DS_Store
+__pycache__
+logs/
+checkpoint/
 
 # Dataset files
 data/NewYork_file/

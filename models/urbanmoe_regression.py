@@ -65,7 +65,8 @@ class UrbanMoE_Regression(nn.Module):
 
         self.gate_kernels_image = nn.ParameterList([
             nn.Parameter(torch.empty(
-                args.img_embedding_dim,
+                args.img_embedding_dim + args.region_embedding_dim + (
+                    args.output_feature_dim if args.use_poi else 0),
                 args.num_all_shared_experts +
                 args.num_pair_shared_experts * (args.num_tasks - 1) +
                 args.num_task_experts,
@@ -74,7 +75,8 @@ class UrbanMoE_Regression(nn.Module):
         ])
         self.gate_kernels_text = nn.ParameterList([
             nn.Parameter(torch.empty(
-                args.text_embedding_dim,
+                args.text_embedding_dim + args.region_embedding_dim + (
+                    args.output_feature_dim if args.use_poi else 0),
                 args.num_all_shared_experts +
                 args.num_pair_shared_experts * (args.num_tasks - 1) +
                 args.num_task_experts,
@@ -99,11 +101,13 @@ class UrbanMoE_Regression(nn.Module):
             )) for _ in range(args.num_tasks)
         ])
 
-        for kernel in self.gate_kernels_image + self.gate_kernels_text:
+        for kernel in list(self.gate_kernels_image) + list(self.gate_kernels_text):
             nn.init.xavier_normal_(kernel)
-        for bias in self.gate_bias_image + self.gate_bias_text:
+        for bias in list(self.gate_bias_image) + list(self.gate_bias_text):
             nn.init.uniform_(bias, -0.1, 0.1)
 
+        # TODO: paper uses d_p=15 (POI embedding) and d_r=6; here POI counts are projected to
+        # output_feature_dim (32). Unclear whether the paper applies a learned projection to the counts
         self.poi_projection = nn.Linear(args.poi_dim, args.output_feature_dim) if args.use_poi else None
 
         self.output_layer = nn.ModuleList([
@@ -122,10 +126,10 @@ class UrbanMoE_Regression(nn.Module):
             topk_vals, topk_idx = torch.topk(probs, k, dim=-1)
             mask = torch.zeros_like(probs)
             mask.scatter_(1, topk_idx, 1.0)
-            probs *= mask
+            probs = probs * mask
         elif mode == "threshold":
             mask = (probs >= threshold).float()
-            probs *= mask
+            probs = probs * mask
         probs = probs / (probs.sum(dim=-1, keepdim=True) + 1e-12)
         return probs
 
@@ -150,11 +154,12 @@ class UrbanMoE_Regression(nn.Module):
         outputs_img, outputs_txt = [], []
         task_pairs = [(i, j) for i in range(self.num_tasks) for j in range(i + 1, self.num_tasks)]
 
-        # TODO: threshold=0 keeps every expert, so the gating is dense, not sparse
+        # TODO: threshold=0 keeps every expert, so the gating is dense. The paper (Eq. 5, App. C)
+        # zeroes gate weights <= eps and finds eps=0.01 best; eps=0 is reported as "still competitive"
         for task_idx in range(self.num_tasks):
-            gate_img = torch.einsum("bi,ie->be", image_features, self.gate_kernels_image[task_idx]) + self.gate_bias_image[task_idx]
+            gate_img = torch.einsum("bi,ie->be", fused_image, self.gate_kernels_image[task_idx]) + self.gate_bias_image[task_idx]
             gate_img = self.sparse_softmax(gate_img, mode="threshold", threshold=0)
-            gate_txt = torch.einsum("bi,ie->be", text_features, self.gate_kernels_text[task_idx]) + self.gate_bias_text[task_idx]
+            gate_txt = torch.einsum("bi,ie->be", fused_text, self.gate_kernels_text[task_idx]) + self.gate_bias_text[task_idx]
             gate_txt = self.sparse_softmax(gate_txt, mode="threshold", threshold=0)
 
             weighted_img = self._aggregate_experts(task_idx, gate_img, fused_image, self.image_experts, task_pairs)
@@ -170,7 +175,7 @@ class UrbanMoE_Regression(nn.Module):
         if self.training and targets is not None:
             reg_loss = sum([F.mse_loss(outputs[i], targets[:, i].unsqueeze(1)) for i in range(self.num_tasks)])
             contr_loss = sum([contrastive_loss(outputs_img[i], outputs_txt[i]) for i in range(self.num_tasks)])
-            # TODO: contrastive loss is zero-weighted, so it has no effect on training
+            # NOTE: intentional, matches the paper (Eq. 8): the objective is weighted MSE only, with no contrastive term
             total_loss = reg_loss + 0 * contr_loss
             return torch.cat(outputs, dim=1), total_loss
 

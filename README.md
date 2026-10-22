@@ -15,6 +15,16 @@ The dataset used in this project is publicly available:
 - 📝 Textual region descriptions   
 - 📈 Ground-truth labels (e.g., population, carbon emissions, light)
 
+### Note: model selection depends on the random split
+Best-checkpoint selection uses validation carbon error. The NewYork carbon labels are heavily right-skewed, with a handful of extreme values (one far above the rest), so validation carbon error depends heavily on whether those tiles land in the validation split, and checkpoint choice follows.
+
+The highest-carbon NewYork tiles line up with large point sources, which the tile's POIs and text do not reveal (tile locations come from the GeoTIFF georeference, UTM zone 18N):
+- `tile_436`: E. F. Barrett Power Station (Island Park, NY)
+- `tile_1682`: Port Jefferson Power Station (Port Jefferson, NY)
+- `tile_105`: JFK Airport (its description also says airport)
+
+This fits how the paper's carbon source (ODIAC) places emissions, using power plant locations and nighttime lights.
+
 ---
 
  ## 📄 Paper

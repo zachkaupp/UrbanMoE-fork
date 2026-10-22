@@ -12,7 +12,7 @@ def compute_all_metrics(y_true, y_pred):
     metrics["mse"] = mean_squared_error(y_true, y_pred)
     metrics["rmse"] = np.sqrt(metrics["mse"])
     metrics["mae"] = mean_absolute_error(y_true, y_pred)
-    # TODO: targets are scaled to ~[0, 1], so near-zero labels can blow up MAPE
+    # TODO: MAPE is not reported in the paper (R2, RMSE, MAE only); near-zero labels can blow it up
     metrics["mape"] =mean_absolute_percentage_error(y_true, y_pred)
     metrics["r2"] = r2_score(y_true, y_pred)
     return metrics
