@@ -1,8 +1,10 @@
 CLAUDE.md
+.claude/
 .DS_Store
 __pycache__
 logs/
 checkpoint/
+.venv/
 
 # Dataset files
 data/NewYork_file/
@@ -15,3 +17,6 @@ data/shanghai_sat/
 data/Shanghai_descriptions/
 data/shanghai_merged_normalized.csv
 RemoteCLIP-ViT-L-14.pt
+
+# Generated embeddings
+data/embeddings/
