@@ -18,6 +18,9 @@ def create_datasets(args, transform, tokenizer):
     if args.dataset == "Shanghai":
         df = pd.read_csv("data/shanghai_merged_normalized.csv")
         poi_path = "data/shanghai_poi_category_counts.csv"
+    elif args.dataset == "Beijing":
+        df = pd.read_csv("data/Beijing_merged_normalized.csv")
+        poi_path = None
     elif args.dataset == "NewYork":
         df = pd.read_csv("data/NewYork_merged_normalized.csv")
         poi_path = "data/NY_merged_top_category_counts.csv"

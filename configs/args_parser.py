@@ -39,7 +39,7 @@ def create_args():
 
     parser.add_argument("--seed", type=int, default=132)
     parser.add_argument("--device", type=str,
-                        default=torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+                        default=torch.device('mps' if torch.backends.mps.is_available() else 'cpu'))
     parser.add_argument("--logging_dir", type=str,
                         default="logs/")
     parser.add_argument("--checkpoint_dir", type=str,

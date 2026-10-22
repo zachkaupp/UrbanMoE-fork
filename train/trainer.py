@@ -17,7 +17,7 @@ class AverageMeter:
 
 
 def train_one_epoch(model, optimizer, data, epoch, args, logger, writer=None):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = args.device
     model.train()
     dataloader = data["train_loader"]
     mse_meter = AverageMeter()
@@ -40,7 +40,7 @@ def train_one_epoch(model, optimizer, data, epoch, args, logger, writer=None):
 
 
 def evaluate(model, data, args, logger, split="val"):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = args.device
     model.eval()
     dataloader = data[f"{split}_loader"]
     all_y, all_pred = [], []

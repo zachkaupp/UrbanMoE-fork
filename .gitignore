@@ -1,0 +1,13 @@
+CLAUDE.md
+.DS_Store
+
+# Dataset files
+data/NewYork_file/
+data/NewYork_generated_descriptions_Summary/
+data/NewYork_merged_normalized.csv
+data/beijing_sat/
+data/beijing_descriptions/
+data/Beijing_merged_normalized.csv
+data/shanghai_sat/
+data/Shanghai_descriptions/
+data/shanghai_merged_normalized.csv
