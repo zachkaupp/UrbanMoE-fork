@@ -46,6 +46,8 @@ uv run python scripts/compute_embeddings.py --dataset NewYork --embedder s2vec -
 - **S2Vec training area:** with `--train_region northeast`, S2Vec trains on the whole Northeast, then embeds the tiles.
 - **Computation changes:** OSM features are counted a few images at a time and freed (`scripts/s2vec_counts.py`), since S2Vec trains only on the per-cell counts and the features were what ran out of memory. The counting is identical to doing it all at once; the loader can return slightly different features (about 0.1-0.3%) for a different query area, so counts differ in under 0.1% of entries. The model is fitted on the training area and then used only to embed the tiles.
 
+- **AlphaEarth:** `scripts/compute_alphaearth.py` writes `data/embeddings/<dataset>_alphaearth.csv` (64 dims, unit length). It reads each tile's window from the public AlphaEarth Foundations COGs (latest year, no Earth Engine account) and averages the 10 m pixels inside the tile.
+
 ---
 
  ## 📄 Paper

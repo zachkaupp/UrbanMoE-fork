@@ -3,6 +3,7 @@
 S2Vec only trains on the per-cell counts (one row per cell, one column per feature value). The OSM features
 and the cell/feature join are only needed to produce those counts, and they are what takes the memory.
 """
+import time
 from collections import Counter
 
 import geopandas as gpd
@@ -14,6 +15,22 @@ from srai.embedders.s2vec.grid_utils import get_grid_patches
 from srai.joiners import IntersectionJoiner
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+
+
+# seconds to wait before each retry of a failed OSM load, 90 in total, so a short sleep or network drop is survived
+RETRY_WAITS = (5, 10, 15, 30, 30)
+
+
+def load_with_retries(loader, area, tags):
+    """loader.load, retried when it fails (the OSM extract downloads have no retry of their own)."""
+    for wait in (*RETRY_WAITS, None):
+        try:
+            return loader.load(area, tags)
+        except Exception as error:
+            if wait is None:
+                raise
+            print(f"OSM load failed ({type(error).__name__}: {error}), retrying in {wait}s")
+            time.sleep(wait)
 
 
 def union_geometry(geoseries):
@@ -39,7 +56,7 @@ def _chunks(cells, img_cell_joint, img_size, chunk_images, tags, loader, desc):
     for start in tqdm(range(0, len(cell_ids), step), desc=desc):
         chunk_cells = cells.loc[cell_ids[start:start + step]]
         area = gpd.GeoDataFrame(geometry=[union_geometry(chunk_cells.geometry)], crs=chunk_cells.crs)
-        yield chunk_cells, loader.load(area, tags)
+        yield chunk_cells, load_with_retries(loader, area, tags)
 
 
 def count_feature_values(cells, img_cell_joint, img_size, chunk_images, tags, loader):
