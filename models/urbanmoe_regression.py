@@ -12,12 +12,14 @@ class UrbanMoE_Regression(nn.Module):
         self.num_tasks = args.num_tasks
         self.branches = list(args.modalities)
 
-        self.region_embedding = nn.Embedding(
-            num_embeddings=args.num_regions,
-            embedding_dim=args.region_embedding_dim,
-            device=args.device
-        )
-        nn.init.xavier_normal_(self.region_embedding.weight)
+        self.region_embedding = None
+        if args.use_region_embedding:
+            self.region_embedding = nn.Embedding(
+                num_embeddings=args.num_regions,
+                embedding_dim=args.region_embedding_dim,
+                device=args.device
+            )
+            nn.init.xavier_normal_(self.region_embedding.weight)
 
         self.num_task_pairs = args.num_tasks * (args.num_tasks - 1) // 2
 
@@ -85,7 +87,8 @@ class UrbanMoE_Regression(nn.Module):
             'image': args.img_embedding_dim,
             'text': args.text_embedding_dim,
         }.get(name) or args.embedding_dims[name]
-        return modality_dim + args.region_embedding_dim + (args.output_feature_dim if args.use_poi else 0)
+        return (modality_dim + (args.region_embedding_dim if args.use_region_embedding else 0)
+                + (args.output_feature_dim if args.use_poi else 0))
 
     def sparse_softmax(self, logits, mode="topk", k=2, threshold=0.02):
         probs = F.softmax(logits, dim=-1)
@@ -121,9 +124,12 @@ class UrbanMoE_Regression(nn.Module):
             poi_emb = self.poi_projection(poi_features)
             features = {name: torch.cat([feature, poi_emb], dim=1) for name, feature in features.items()}
 
-        region_embeds = self.region_embedding(region_ids) if region_ids is not None else \
-            torch.zeros(len(reference), self.region_embedding.embedding_dim, device=reference.device)
-        fused = {name: torch.cat([feature, region_embeds], dim=1) for name, feature in features.items()}
+        if self.region_embedding is None:
+            fused = features
+        else:
+            region_embeds = self.region_embedding(region_ids) if region_ids is not None else \
+                torch.zeros(len(reference), self.region_embedding.embedding_dim, device=reference.device)
+            fused = {name: torch.cat([feature, region_embeds], dim=1) for name, feature in features.items()}
 
         branch_outputs = {name: [] for name in self.branches}
         task_pairs = [(i, j) for i in range(self.num_tasks) for j in range(i + 1, self.num_tasks)]

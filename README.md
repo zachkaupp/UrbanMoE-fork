@@ -2,6 +2,8 @@
  A multimodal multi-task framework for urban region representation and regression, integrating images, text, and POI data with a Mixture-of-Experts architecture.
 
 
+> **Note:** the region embedding is a per-tile lookup with ids assigned separately in train/val/test, so val and test tiles get embeddings trained for other tiles (or never trained), and in training it can memorize tiles. TODO: test `--no-use_region_embedding` (added, not yet tested) and check performance without it.
+
 ## ⚙️ Environment
 
 `srai` is installed from a fork (https://github.com/zachkaupp/srai-fork). `uv.lock` pins a specific commit of it, so plain `uv sync` won't pick up new commits. To pull the latest commit from the fork:

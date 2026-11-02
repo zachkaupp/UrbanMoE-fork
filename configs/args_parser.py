@@ -60,4 +60,6 @@ def create_args():
     parser.add_argument("--use_poi", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--poi_dim", type=int, default=0)
 
+    parser.add_argument("--use_region_embedding", action=argparse.BooleanOptionalAction, default=True)
+
     return parser.parse_args()
