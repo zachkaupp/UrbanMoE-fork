@@ -14,6 +14,24 @@ import pandas as pd
 import numpy as np
 
 
+def load_embedding(args, name, df, train_df):
+    """The embedding table for a modality, standardized with the training split's mean and std."""
+    path = os.path.join(args.embedding_dir, f"{args.dataset}_{name}.csv")
+    table = pd.read_csv(path, index_col="name")
+    if name == "contextual_count":
+        table = np.log1p(table)
+
+    names = lambda frame: frame["filename"].str.replace(".tif.tif", ".csv", regex=False)
+    missing = sorted(set(names(df)) - set(table.index))
+    if missing:
+        raise ValueError(f"{path} has no embedding for {len(missing)} tiles, e.g. {missing[:5]}")
+
+    train_table = table.loc[names(train_df)]
+    mean, std = train_table.mean(), train_table.std(ddof=0)
+    std = std.where(std > 1e-8, 1.0)  # constant columns in the training split
+    return ((table - mean) / std).astype(np.float32)
+
+
 def create_datasets(args, transform, tokenizer):
     if args.dataset == "Shanghai":
         df = pd.read_csv("data/shanghai_merged_normalized.csv")
@@ -36,9 +54,18 @@ def create_datasets(args, transform, tokenizer):
     mean = [np.mean(train_df[args.indicator1]), np.mean(train_df[args.indicator2]), np.mean(train_df[args.indicator3])]
     std = [np.std(train_df[args.indicator1]), np.std(train_df[args.indicator2]), np.std(train_df[args.indicator3])]
 
-    train_set = getDataset(args.dataset, train_df, transform, tokenizer, False, mean, std, poi_path)
-    val_set = getDataset(args.dataset, val_df, transform, tokenizer, False, mean, std, poi_path)
-    test_set = getDataset(args.dataset, test_df, transform, tokenizer, False, mean, std, poi_path)
+    embedding_modalities = [m for m in args.modalities if m not in ("image", "text")]
+    if embedding_modalities and args.dataset != "NewYork":
+        raise ValueError(f"{embedding_modalities} embeddings only exist for NewYork")
+    embeddings = {name: load_embedding(args, name, df, train_df) for name in embedding_modalities}
+    args.embedding_dims = {name: table.shape[1] for name, table in embeddings.items()}
+
+    dataset_args = (args.dataset,)
+    dataset_kwargs = dict(transform=transform, tokenizer=tokenizer, is_test=False, mean=mean, std=std,
+                          poi_path=poi_path, modalities=args.modalities, embeddings=embeddings)
+    train_set = getDataset(*dataset_args, df_data=train_df, **dataset_kwargs)
+    val_set = getDataset(*dataset_args, df_data=val_df, **dataset_kwargs)
+    test_set = getDataset(*dataset_args, df_data=test_df, **dataset_kwargs)
 
     return train_set, val_set, test_set, mean, std
 

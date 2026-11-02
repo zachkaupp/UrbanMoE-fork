@@ -16,6 +16,12 @@ class AverageMeter:
         self.avg = self.sum / self.count
 
 
+def unpack_batch(batch, device):
+    inputs, region_id, y, poi = batch
+    inputs = {name: value.to(device) for name, value in inputs.items()}
+    return inputs, region_id.to(device), y.to(device), poi.to(device)
+
+
 def train_one_epoch(model, optimizer, data, epoch, args, logger, writer=None):
     device = args.device
     model.train()
@@ -23,13 +29,12 @@ def train_one_epoch(model, optimizer, data, epoch, args, logger, writer=None):
     mse_meter = AverageMeter()
 
     for batch_idx, batch in enumerate(tqdm(dataloader, desc=f"Epoch {epoch}")):
-        images, texts, region_id, y, poi = batch
-        images, texts, region_id, y, poi = images.to(device), texts.to(device), region_id.to(device), y.to(device), poi.to(device)
+        inputs, region_id, y, poi = unpack_batch(batch, device)
         optimizer.zero_grad()
-        preds, loss = model(args, images, texts, region_id, y, poi)
+        preds, loss = model(args, inputs, region_id, y, poi)
         loss.backward()
         optimizer.step()
-        mse_meter.update(loss.item(), len(images))
+        mse_meter.update(loss.item(), len(y))
 
         if batch_idx % args.log_every_n_steps == 0:
             logger.info(f"[Epoch {epoch}] Step {batch_idx} | Loss: {loss.item():.5f}")
@@ -47,9 +52,8 @@ def evaluate(model, data, args, logger, split="val"):
 
     with torch.no_grad():
         for batch in tqdm(dataloader, desc=f"Evaluating {split}"):
-            images, texts, region_id, y, poi = batch
-            images, texts, region_id, y, poi = images.to(device), texts.to(device), region_id.to(device), y.to(device), poi.to(device)
-            preds = model(args, images, texts, region_id, y, poi)
+            inputs, region_id, y, poi = unpack_batch(batch, device)
+            preds = model(args, inputs, region_id, y, poi)
             all_y.append(y.cpu().numpy())
             all_pred.append(preds.cpu().numpy())
 

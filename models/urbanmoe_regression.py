@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .experts import Expert
-from .loss_utils import contrastive_loss
 
 
 class UrbanMoE_Regression(nn.Module):
@@ -11,6 +10,7 @@ class UrbanMoE_Regression(nn.Module):
         self.clip = clip_model
         self.args = args
         self.num_tasks = args.num_tasks
+        self.branches = list(args.modalities)
 
         self.region_embedding = nn.Embedding(
             num_embeddings=args.num_regions,
@@ -21,90 +21,49 @@ class UrbanMoE_Regression(nn.Module):
 
         self.num_task_pairs = args.num_tasks * (args.num_tasks - 1) // 2
 
-        self.image_experts = nn.ModuleDict({
-            'all_shared': nn.ModuleList([
-                Expert(args.img_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                    args.output_feature_dim)
-                for _ in range(args.num_all_shared_experts)
-            ]),
-            'pair_shared': nn.ModuleList([
-                Expert(args.img_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                    args.output_feature_dim)
-                for _ in range(args.num_pair_shared_experts * self.num_task_pairs)
-            ]),
-            'task_specific': nn.ModuleList([
-                Expert(args.img_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                    args.output_feature_dim)
-                for _ in range(args.num_task_experts * args.num_tasks)
-            ])
+        # one set of experts and gates per branch (modality), each with its own input size
+        branch_dims = {name: self._input_dim(name) for name in self.branches}
+        self.experts = nn.ModuleDict({
+            name: nn.ModuleDict({
+                'all_shared': nn.ModuleList([
+                    Expert(dim, args.output_feature_dim)
+                    for _ in range(args.num_all_shared_experts)
+                ]),
+                'pair_shared': nn.ModuleList([
+                    Expert(dim, args.output_feature_dim)
+                    for _ in range(args.num_pair_shared_experts * self.num_task_pairs)
+                ]),
+                'task_specific': nn.ModuleList([
+                    Expert(dim, args.output_feature_dim)
+                    for _ in range(args.num_task_experts * args.num_tasks)
+                ])
+            }) for name, dim in branch_dims.items()
         })
 
-        self.text_experts = nn.ModuleDict({
-            'all_shared': nn.ModuleList([
-                Expert(args.text_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                    args.output_feature_dim)
-                for _ in range(args.num_all_shared_experts)
-            ]),
-            'pair_shared': nn.ModuleList([
-                Expert(args.text_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                    args.output_feature_dim)
-                for _ in range(args.num_pair_shared_experts * self.num_task_pairs)
-            ]),
-            'task_specific': nn.ModuleList([
-                Expert(args.text_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                    args.output_feature_dim)
-                for _ in range(args.num_task_experts * args.num_tasks)
-            ])
+        num_gate_outputs = (
+            args.num_all_shared_experts +
+            args.num_pair_shared_experts * (args.num_tasks - 1) +
+            args.num_task_experts
+        )
+        self.gate_kernels = nn.ModuleDict({
+            name: nn.ParameterList([
+                nn.Parameter(torch.empty(dim, num_gate_outputs, device=args.device))
+                for _ in range(args.num_tasks)
+            ]) for name, dim in branch_dims.items()
+        })
+        self.gate_biases = nn.ModuleDict({
+            name: nn.ParameterList([
+                nn.Parameter(torch.zeros(num_gate_outputs, device=args.device))
+                for _ in range(args.num_tasks)
+            ]) for name in branch_dims
         })
 
-        self.gate_kernels_image = nn.ParameterList([
-            nn.Parameter(torch.empty(
-                args.img_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                args.num_all_shared_experts +
-                args.num_pair_shared_experts * (args.num_tasks - 1) +
-                args.num_task_experts,
-                device=args.device
-            )) for _ in range(args.num_tasks)
-        ])
-        self.gate_kernels_text = nn.ParameterList([
-            nn.Parameter(torch.empty(
-                args.text_embedding_dim + args.region_embedding_dim + (
-                    args.output_feature_dim if args.use_poi else 0),
-                args.num_all_shared_experts +
-                args.num_pair_shared_experts * (args.num_tasks - 1) +
-                args.num_task_experts,
-                device=args.device
-            )) for _ in range(args.num_tasks)
-        ])
-
-        self.gate_bias_image = nn.ParameterList([
-            nn.Parameter(torch.zeros(
-                args.num_all_shared_experts +
-                args.num_pair_shared_experts * (args.num_tasks - 1) +
-                args.num_task_experts,
-                device=args.device
-            )) for _ in range(args.num_tasks)
-        ])
-        self.gate_bias_text = nn.ParameterList([
-            nn.Parameter(torch.zeros(
-                args.num_all_shared_experts +
-                args.num_pair_shared_experts * (args.num_tasks - 1) +
-                args.num_task_experts,
-                device=args.device
-            )) for _ in range(args.num_tasks)
-        ])
-
-        for kernel in list(self.gate_kernels_image) + list(self.gate_kernels_text):
-            nn.init.xavier_normal_(kernel)
-        for bias in list(self.gate_bias_image) + list(self.gate_bias_text):
-            nn.init.uniform_(bias, -0.1, 0.1)
+        for name in self.branches:
+            for kernel in self.gate_kernels[name]:
+                nn.init.xavier_normal_(kernel)
+        for name in self.branches:
+            for bias in self.gate_biases[name]:
+                nn.init.uniform_(bias, -0.1, 0.1)
 
         # TODO: paper uses d_p=15 (POI embedding) and d_r=6; here POI counts are projected to
         # output_feature_dim (32). Unclear whether the paper applies a learned projection to the counts
@@ -112,12 +71,21 @@ class UrbanMoE_Regression(nn.Module):
 
         self.output_layer = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(args.output_feature_dim * 2, args.hidden_num * 2),
+                nn.Linear(args.output_feature_dim * len(self.branches), args.hidden_num * 2),
                 nn.ReLU(),
                 nn.Dropout(args.drop_out),
                 nn.Linear(args.hidden_num * 2, 1)
             ) for _ in range(args.num_tasks)
         ])
+
+    def _input_dim(self, name):
+        """Size of a branch's expert input: the modality vector, the region embedding and the POI projection."""
+        args = self.args
+        modality_dim = {
+            'image': args.img_embedding_dim,
+            'text': args.text_embedding_dim,
+        }.get(name) or args.embedding_dims[name]
+        return modality_dim + args.region_embedding_dim + (args.output_feature_dim if args.use_poi else 0)
 
     def sparse_softmax(self, logits, mode="topk", k=2, threshold=0.02):
         probs = F.softmax(logits, dim=-1)
@@ -133,51 +101,52 @@ class UrbanMoE_Regression(nn.Module):
         probs = probs / (probs.sum(dim=-1, keepdim=True) + 1e-12)
         return probs
 
-    def forward(self, args, images, texts, region_ids=None, targets=None, poi_features=None):
+    def forward(self, args, inputs, region_ids=None, targets=None, poi_features=None):
+        features = {}
         with torch.no_grad():
-            image_features = self.clip.encode_image(images)
-            if texts.dim() == 3 and texts.shape[1] == 1:
-                texts = texts.squeeze(1)
-            text_features = self.clip.encode_text(texts)
+            if 'image' in self.branches:
+                features['image'] = self.clip.encode_image(inputs['image'])
+            if 'text' in self.branches:
+                texts = inputs['text']
+                if texts.dim() == 3 and texts.shape[1] == 1:
+                    texts = texts.squeeze(1)
+                features['text'] = self.clip.encode_text(texts)
+        for name in self.branches:
+            if name not in features:
+                features[name] = inputs[name]
+        reference = features[self.branches[0]]
 
         if poi_features is not None and self.poi_projection is not None:
-            poi_features = poi_features.to(image_features.device)
+            poi_features = poi_features.to(reference.device)
             poi_emb = self.poi_projection(poi_features)
-            image_features = torch.cat([image_features, poi_emb], dim=1)
-            text_features = torch.cat([text_features, poi_emb], dim=1)
+            features = {name: torch.cat([feature, poi_emb], dim=1) for name, feature in features.items()}
 
         region_embeds = self.region_embedding(region_ids) if region_ids is not None else \
-            torch.zeros(len(image_features), self.region_embedding.embedding_dim, device=image_features.device)
-        fused_image = torch.cat([image_features, region_embeds], dim=1)
-        fused_text = torch.cat([text_features, region_embeds], dim=1)
+            torch.zeros(len(reference), self.region_embedding.embedding_dim, device=reference.device)
+        fused = {name: torch.cat([feature, region_embeds], dim=1) for name, feature in features.items()}
 
-        outputs_img, outputs_txt = [], []
+        branch_outputs = {name: [] for name in self.branches}
         task_pairs = [(i, j) for i in range(self.num_tasks) for j in range(i + 1, self.num_tasks)]
 
         # TODO: threshold=0 keeps every expert, so the gating is dense. The paper (Eq. 5, App. C)
         # zeroes gate weights <= eps and finds eps=0.01 best; eps=0 is reported as "still competitive"
         for task_idx in range(self.num_tasks):
-            gate_img = torch.einsum("bi,ie->be", fused_image, self.gate_kernels_image[task_idx]) + self.gate_bias_image[task_idx]
-            gate_img = self.sparse_softmax(gate_img, mode="threshold", threshold=0)
-            gate_txt = torch.einsum("bi,ie->be", fused_text, self.gate_kernels_text[task_idx]) + self.gate_bias_text[task_idx]
-            gate_txt = self.sparse_softmax(gate_txt, mode="threshold", threshold=0)
-
-            weighted_img = self._aggregate_experts(task_idx, gate_img, fused_image, self.image_experts, task_pairs)
-            weighted_txt = self._aggregate_experts(task_idx, gate_txt, fused_text, self.text_experts, task_pairs)
-            outputs_img.append(weighted_img)
-            outputs_txt.append(weighted_txt)
+            for name in self.branches:
+                gate = torch.einsum("bi,ie->be", fused[name], self.gate_kernels[name][task_idx]) + self.gate_biases[name][task_idx]
+                gate = self.sparse_softmax(gate, mode="threshold", threshold=0)
+                branch_outputs[name].append(
+                    self._aggregate_experts(task_idx, gate, fused[name], self.experts[name], task_pairs))
 
         outputs = []
         for i in range(self.num_tasks):
-            fused = torch.cat([outputs_img[i], outputs_txt[i]], dim=1)
-            outputs.append(self.output_layer[i](fused))
+            combined = torch.cat([branch_outputs[name][i] for name in self.branches], dim=1)
+            outputs.append(self.output_layer[i](combined))
 
         if self.training and targets is not None:
             reg_loss = sum([F.mse_loss(outputs[i], targets[:, i].unsqueeze(1)) for i in range(self.num_tasks)])
-            contr_loss = sum([contrastive_loss(outputs_img[i], outputs_txt[i]) for i in range(self.num_tasks)])
-            # NOTE: intentional, matches the paper (Eq. 8): the objective is weighted MSE only, with no contrastive term
-            total_loss = reg_loss + 0 * contr_loss
-            return torch.cat(outputs, dim=1), total_loss
+            # NOTE: intentional, matches the paper (Eq. 8): the objective is weighted MSE only. The contrastive
+            # term between the image and text outputs had weight 0, so it is no longer computed
+            return torch.cat(outputs, dim=1), reg_loss
 
         return torch.cat(outputs, dim=1)
 

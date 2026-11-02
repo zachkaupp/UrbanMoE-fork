@@ -18,11 +18,15 @@ class getDataset(Dataset):
         std=None,
         poi_path=None,
         poi_normalization='sum',
+        modalities=("image", "text"),
+        embeddings=None,
     ):
         super().__init__()
         self.transform = transform
         self.tokenizer = tokenizer
         self.poi_normalization = poi_normalization
+        self.modalities = modalities
+        embeddings = embeddings or {}
 
         if mean is None:
             mean = [0, 0, 0]
@@ -31,6 +35,7 @@ class getDataset(Dataset):
 
         self.text_tensors, self.img_tensors, self.y = [], [], []
         self.region_labels, self.poi_features = [], []
+        self.embedding_features = {name: [] for name in embeddings}
 
         self.poi_df, self.poi_columns = self._load_poi(poi_path)
 
@@ -40,14 +45,19 @@ class getDataset(Dataset):
             poi_feature = self._get_poi_feature(region)
             self.poi_features.append(poi_feature)
 
-            img_path = self._get_image_path(data_name, filename)
-            image = Image.open(img_path).convert("RGB")
-            image = self.transform(image)
-            self.img_tensors.append(image)
+            if "image" in modalities:
+                img_path = self._get_image_path(data_name, filename)
+                image = Image.open(img_path).convert("RGB")
+                image = self.transform(image)
+                self.img_tensors.append(image)
 
-            text = self._get_text(data_name, filename)
-            tokens = self.tokenizer(text)
-            self.text_tensors.append(tokens)
+            if "text" in modalities:
+                text = self._get_text(data_name, filename)
+                tokens = self.tokenizer(text)
+                self.text_tensors.append(tokens)
+
+            for name, table in embeddings.items():
+                self.embedding_features[name].append(table.loc[region + ".csv"].to_numpy(dtype=np.float32))
 
             if is_test:
                 self.y.append([0.0, 0.0, 0.0])
@@ -122,9 +132,13 @@ class getDataset(Dataset):
 
     def __getitem__(self, index):
         poi_feature = torch.from_numpy(self.poi_features[index]) if len(self.poi_features) > 0 else torch.tensor([])
+        inputs = {name: features[index] for name, features in self.embedding_features.items()}
+        if "image" in self.modalities:
+            inputs["image"] = self.img_tensors[index]
+        if "text" in self.modalities:
+            inputs["text"] = self.text_tensors[index]
         return (
-            self.img_tensors[index],
-            self.text_tensors[index],
+            inputs,
             self.region_ids[index],
             np.float32(self.y[index]),
             poi_feature.float(),
