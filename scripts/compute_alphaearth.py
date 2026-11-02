@@ -6,6 +6,9 @@
 Reads each tile's window straight from the public Cloud Optimized GeoTIFFs in gs://alphaearth_foundations (no
 Earth Engine account), averages the de-quantized 10 m pixel embeddings inside the tile and renormalizes to unit
 length, as the bucket README does for its overviews.
+
+Finished batches of tiles are saved under <output_dir>/aef_cache/, so rerunning the same command after a stop or a
+failure continues where it left off. Delete that folder to start over.
 """
 import argparse
 import threading
@@ -27,6 +30,7 @@ INDEX_URL = BUCKET + "satellite_embedding/v1/annual/aef_index.parquet"
 INDEX_COLUMNS = ["path", "crs", "year", "utm_west", "utm_south", "utm_east", "utm_north"]
 NODATA = -128
 NUM_BANDS = 64
+COLUMNS = [f"alphaearth_{i}" for i in range(NUM_BANDS)]
 GDAL_OPTIONS = {
     "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
     "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tiff",
@@ -50,6 +54,8 @@ def create_args():
     parser.add_argument("--limit", type=int, default=None, help="only use the first N tiles (for a quick test)")
     parser.add_argument("--year", type=int, default=None, help="embedding year, default the latest in the index")
     parser.add_argument("--workers", type=int, default=16, help="tiles read in parallel")
+    parser.add_argument("--batch_size", type=int, default=64,
+                        help="tiles per saved batch; a stopped run keeps every finished batch")
     return parser.parse_args()
 
 
@@ -138,6 +144,24 @@ def tile_embedding(tile, files):
     return name, total / (np.linalg.norm(total) + 1e-9)
 
 
+def save_part(parts_dir, results):
+    """Write a batch of (tile id, embedding) atomically; a tile with no valid pixels is a row of NaN."""
+    parts_dir.mkdir(parents=True, exist_ok=True)
+    rows = [np.full(NUM_BANDS, np.nan) if embedding is None else embedding for _, embedding in results]
+    part = pd.DataFrame(rows, columns=COLUMNS, index=pd.Index([f"{name}.csv" for name, _ in results], name="name"))
+    path = parts_dir / f"part_{time.time_ns()}.csv"
+    part.to_csv(path.with_suffix(".tmp"))
+    path.with_suffix(".tmp").replace(path)
+
+
+def load_parts(parts_dir):
+    paths = sorted(parts_dir.glob("part_*.csv"))
+    if not paths:
+        return pd.DataFrame(columns=COLUMNS, index=pd.Index([], name="name"), dtype=float)
+    parts = pd.concat(pd.read_csv(path, index_col="name") for path in paths)
+    return parts[~parts.index.duplicated(keep="last")]
+
+
 def main():
     args = create_args()
     output_dir = Path(args.output_dir)
@@ -156,17 +180,26 @@ def main():
     files["url"] = files["path"].str.replace("gs://", "https://storage.googleapis.com/", regex=False)
     print(f"Year {year}, {len(files)} files in EPSG:{epsg}")
 
-    with ThreadPoolExecutor(args.workers) as pool:
-        results = list(tqdm(pool.map(lambda tile: tile_embedding(tile, files), tiles), total=len(tiles)))
+    # finished batches are kept on disk, so a stopped run continues where it left off
+    parts_dir = output_dir / "aef_cache" / f"{args.dataset}_{year}"
+    done = load_parts(parts_dir)
+    todo = [tile for tile in tiles if f"{tile[0]}.csv" not in done.index]
+    print(f"{len(tiles) - len(todo)} tiles already done, {len(todo)} to go")
 
-    names = [name for name, _ in results]
-    rows = [np.zeros(NUM_BANDS) if embedding is None else embedding for _, embedding in results]
-    empty = [name for name, embedding in results if embedding is None]
-    if empty:
-        print(f"Warning: {len(empty)} tiles have no valid pixels, filling with zeros, e.g. {empty[:5]}")
+    with ThreadPoolExecutor(args.workers) as pool, tqdm(total=len(todo)) as progress:
+        for start in range(0, len(todo), args.batch_size):
+            batch = todo[start:start + args.batch_size]
+            results = list(pool.map(lambda tile: tile_embedding(tile, files), batch))
+            save_part(parts_dir, results)
+            progress.update(len(batch))
 
-    embeddings = pd.DataFrame(rows, columns=[f"alphaearth_{i}" for i in range(NUM_BANDS)])
-    embeddings.insert(0, "name", [f"{name}.csv" for name in names])
+    done = load_parts(parts_dir)
+    names = [f"{name}.csv" for name, *_ in tiles]
+    embeddings = done.loc[names]
+    empty = embeddings.index[embeddings.isna().any(axis=1)]
+    if len(empty) > 0:
+        print(f"Warning: {len(empty)} tiles have no valid pixels, filling with zeros, e.g. {list(empty[:5])}")
+    embeddings = embeddings.fillna(0.0).reset_index()
     path = output_dir / f"{args.dataset}_alphaearth.csv"
     embeddings.to_csv(path, index=False)
     print(f"Saved {embeddings.shape[0]} x {embeddings.shape[1] - 1} embeddings to {path}")
