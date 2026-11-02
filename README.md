@@ -4,6 +4,10 @@
 
 > **Note:** the region embedding is a per-tile lookup with ids assigned separately in train/val/test, so val and test tiles get embeddings trained for other tiles (or never trained), and in training it can memorize tiles. TODO: test `--no-use_region_embedding` (added, not yet tested) and check performance without it.
 
+> **Note:** in this code the gate weights are applied to expert outputs, and every eligible expert always runs on the full input, even when its weight is zero. The paper claims sparse routing reduces computation by activating only selected experts (Sections 2.4, 2.4.2, 2.6), but that does not happen here, so it is unclear where such a benefit would come from.
+
+> **Note:** the expert layout (shared and task-specific experts, with each task's gate over its own plus the shared ones) more closely resembles PLE (Tang et al., RecSys 2020, one-level CGC block), which the paper does not cite, than the MMoE it cites. The pair-shared experts and the gate threshold are not in PLE.
+
 ## ⚙️ Environment
 
 `srai` is installed from a fork (https://github.com/zachkaupp/srai-fork). `uv.lock` pins a specific commit of it, so plain `uv sync` won't pick up new commits. To pull the latest commit from the fork:
