@@ -4,6 +4,7 @@ CLAUDE.md
 __pycache__
 logs/
 checkpoint/
+lightning_logs/
 .venv/
 
 # Dataset files

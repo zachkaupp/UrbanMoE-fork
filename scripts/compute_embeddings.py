@@ -2,22 +2,21 @@
 
     uv run python scripts/compute_embeddings.py --dataset NewYork --embedder contextual_count
     uv run python scripts/compute_embeddings.py --dataset NewYork --embedder s2vec --limit 50
+
+S2Vec runs on the tiles' own projected grid (srai-fork), so each tile is exactly one S2Vec cell.
 """
 import argparse
 from pathlib import Path
 
 import geopandas as gpd
-import numpy as np
-import pandas as pd
 from srai.embedders import ContextualCountEmbedder, S2VecEmbedder
-from srai.embedders.s2vec.s2_utils import get_patches_from_img_gdf
+from srai.embedders.s2vec.grid_utils import get_grid_patches
 from srai.joiners import IntersectionJoiner
 from srai.loaders.osm_loaders import OSMPbfLoader
 from srai.neighbourhoods import AdjacencyNeighbourhood
-from srai.regionalizers import S2Regionalizer
 
 from osm_tags import OSM_TAGS
-from tile_geometry import DATASETS, load_tiles
+from tile_geometry import DATASETS, load_tile_grid, load_tiles
 
 
 def create_args():
@@ -31,10 +30,10 @@ def create_args():
 
     parser.add_argument("--neighbour_distance", type=int, default=2)
 
-    parser.add_argument("--img_res", type=int, default=8)
-    parser.add_argument("--patch_res", type=int, default=12)
+    parser.add_argument("--img_size", type=int, default=16,
+                        help="tiles along each side of an S2Vec image")
     parser.add_argument("--embedding_dim", type=int, default=256)
-    parser.add_argument("--s2_buffer_km", type=float, default=40.0,
+    parser.add_argument("--buffer_km", type=float, default=40.0,
                         help="extra area around the tiles used as S2Vec training data")
     parser.add_argument("--min_feature_count", type=int, default=20,
                         help="drop OSM feature values rarer than this from the embedder input")
@@ -73,59 +72,43 @@ def flat_feature_names(features, tags, min_count):
     return sorted(names)
 
 
-def patches_to_tiles(tiles, patches, patch_embeddings):
-    """Average the embeddings of the patches a tile overlaps, weighted by overlap area."""
-    crs = tiles.estimate_utm_crs()
-    tile_geoms = tiles.to_crs(crs).geometry
-    patch_geoms = patches.to_crs(crs).geometry
-
-    left = gpd.GeoDataFrame(geometry=tile_geoms.values, index=tiles.index)
-    left.index.name = None
-    right = gpd.GeoDataFrame(geometry=patch_geoms.values, index=patches.index)
-    right.index.name = None
-    pairs = gpd.sjoin(left, right, how="inner", predicate="intersects")
-
-    weights = np.array([
-        tile_geoms.loc[tile_id].intersection(patch_geoms.loc[patch_id]).area
-        for tile_id, patch_id in zip(pairs.index, pairs["index_right"])
-    ])
-    values = patch_embeddings.loc[pairs["index_right"]].to_numpy() * weights[:, None]
-    summed = pd.DataFrame(values, index=pairs.index).groupby(level=0).sum()
-    totals = pd.Series(weights, index=pairs.index).groupby(level=0).sum()
-    result = summed.div(totals, axis=0)
-    result.index.name = tiles.index.name
-    return result.reindex(tiles.index)
-
-
 def run_s2vec(tiles, tags, args, loader, output_dir):
-    crs = tiles.estimate_utm_crs()
-    area = union_geometry(tiles.to_crs(crs).geometry).buffer(args.s2_buffer_km * 1000)
+    epsg, cell_size, corners = load_tile_grid(args.dataset, args.limit)
+    crs = f"EPSG:{epsg}"
+    origin = tuple(corners.iloc[0])
+    area = union_geometry(tiles.to_crs(crs).geometry).buffer(args.buffer_km * 1000)
     area_gdf = gpd.GeoDataFrame(geometry=[area], crs=crs).to_crs("EPSG:4326")
 
-    images = S2Regionalizer(resolution=args.img_res).transform(area_gdf)
-    print(f"{len(images)} S2 image cells at level {args.img_res}")
-    features = loader.load(images, tags)
+    # images extend past the buffered area, so load OSM for every cell the grid covers
+    cells, img_cell_joint = get_grid_patches(area_gdf, crs, origin, cell_size, args.img_size)
+    print(f"{img_cell_joint.index.get_level_values(0).nunique()} images, {len(cells)} cells")
+    cells_area = gpd.GeoDataFrame(geometry=[union_geometry(cells.geometry)], crs="EPSG:4326")
+    features = loader.load(cells_area, tags)
     print(f"Loaded {len(features)} OSM features")
 
     names = flat_feature_names(features, tags, args.min_feature_count)
     print(f"{len(names)} feature values after min_feature_count={args.min_feature_count}")
     embedder = S2VecEmbedder(
         target_features=names,
+        crs=crs,
+        origin=origin,
+        cell_size=cell_size,
         count_subcategories=True,
         batch_size=args.batch_size,
-        img_res=args.img_res,
-        patch_res=args.patch_res,
+        img_size=args.img_size,
         embedding_dim=args.embedding_dim,
     )
-    patch_embeddings = embedder.fit_transform(
-        images, features,
+    cell_embeddings = embedder.fit_transform(
+        area_gdf, features,
         learning_rate=args.lr,
         trainer_kwargs={"max_epochs": args.epochs, "accelerator": "auto"},
     )
     embedder.save(output_dir / f"{args.dataset}_s2vec_model")
 
-    patches, _ = get_patches_from_img_gdf(img_gdf=images, target_level=args.patch_res)
-    embeddings = patches_to_tiles(tiles, patches, patch_embeddings)
+    # cell ids are "<x>_<y>" of the cell's top-left corner, which is the tile's top-left corner
+    cell_by_corner = {tuple(map(float, cell_id.split("_"))): cell_id for cell_id in cell_embeddings.index}
+    cell_ids = [cell_by_corner[(x, y)] for x, y in corners.loc[tiles.index].itertuples(index=False)]
+    embeddings = cell_embeddings.loc[cell_ids].set_axis(tiles.index)
     embeddings.columns = [f"s2vec_{i}" for i in range(embeddings.shape[1])]
     return embeddings
 

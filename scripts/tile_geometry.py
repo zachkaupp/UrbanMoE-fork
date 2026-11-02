@@ -35,18 +35,45 @@ def _read_bounds(path):
     return epsg, left, top - height * scale[1], left + width * scale[0], top
 
 
-def load_tiles(dataset, limit=None):
-    """Tile polygons (WGS84) indexed by tile id, e.g. 'tile_436'."""
+def _read_tiles(dataset, limit=None):
+    """(tile id, epsg, left, bottom, right, top) for each tile, in projected coordinates."""
     csv_path, image_dir = DATASETS[dataset]
     filenames = pd.read_csv(csv_path)["filename"]
     if limit is not None:
         filenames = filenames.iloc[:limit]
-
-    names, polygons, epsgs = [], [], set()
-    transformers = {}
     for filename in filenames:
         name = filename.replace(".tif.tif", "")
-        epsg, left, bottom, right, top = _read_bounds(f"{image_dir}{name}.tif")
+        yield (name, *_read_bounds(f"{image_dir}{name}.tif"))
+
+
+def load_tile_grid(dataset, limit=None):
+    """The projected grid the tiles sit on: (epsg, cell size, top-left corner of each tile).
+
+    Corners are a DataFrame with x/y columns indexed by tile id.
+    """
+    rows = list(_read_tiles(dataset, limit))
+    epsgs = {epsg for _, epsg, *_ in rows}
+    if len(epsgs) > 1:
+        raise ValueError(f"tiles span multiple projected CRSs: {sorted(epsgs)}")
+
+    corners = pd.DataFrame(
+        [(left, top) for _, _, left, _, _, top in rows],
+        index=pd.Index([name for name, *_ in rows], name="region_id"),
+        columns=["x", "y"],
+    )
+    # a few tiles at the edge of the source imagery are cut short, so use the most common width
+    cell_size = pd.Series([right - left for _, _, left, _, right, _ in rows]).mode()[0]
+    offsets = (corners - corners.iloc[0]) % cell_size
+    if not ((offsets < 1e-6) | (cell_size - offsets < 1e-6)).all().all():
+        raise ValueError("tile corners are not on a regular grid")
+    return epsgs.pop(), cell_size, corners
+
+
+def load_tiles(dataset, limit=None):
+    """Tile polygons (WGS84) indexed by tile id, e.g. 'tile_436'."""
+    names, polygons, epsgs = [], [], set()
+    transformers = {}
+    for name, epsg, left, bottom, right, top in _read_tiles(dataset, limit):
         if epsg not in transformers:
             transformers[epsg] = Transformer.from_crs(epsg, 4326, always_xy=True)
         # corners are transformed from identical projected coordinates, so adjacent tiles share exact vertices
