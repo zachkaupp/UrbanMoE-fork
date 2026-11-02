@@ -34,6 +34,18 @@ The highest-carbon NewYork tiles line up with large point sources, which the til
 
 This fits how the paper's carbon source (ODIAC) places emissions, using power plant locations and nighttime lights.
 
+## 🗺️ OSM embeddings
+
+`scripts/compute_embeddings.py` writes OSM-based tile embeddings (SRAI) to `data/embeddings/`. Not yet wired into `main.py`.
+
+```
+uv run python scripts/compute_embeddings.py --dataset NewYork --embedder s2vec --train_region northeast
+```
+
+- **S2Vec grid:** S2Vec uses modified grid cells: the tiles' own projected grid (`srai-fork`) in place of S2 cells, so each tile is one S2Vec cell.
+- **S2Vec training area:** with `--train_region northeast`, S2Vec trains on the whole Northeast, then embeds the tiles.
+- **Computation changes:** OSM features are counted a few images at a time and freed (`scripts/s2vec_counts.py`), since S2Vec trains only on the per-cell counts and the features were what ran out of memory. The counting is identical to doing it all at once; the loader can return slightly different features (about 0.1-0.3%) for a different query area, so counts differ in under 0.1% of entries. The model is fitted on the training area and then used only to embed the tiles.
+
 ---
 
  ## 📄 Paper
