@@ -74,7 +74,7 @@ def main():
     args = create_args()
     set_random_seed(args.seed)
     logger = create_logger(args.logging_dir, args.seed)
-    writer = create_writer(os.path.join(args.logging_dir, "tb"))
+    writer = create_writer(os.path.join(args.logging_dir, "tb", str(args.seed)))
 
     model_name = "ViT-L-14"
     clip_model, _, preprocess = open_clip.create_model_and_transforms(model_name)
@@ -100,16 +100,17 @@ def main():
     }
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.wd)
-    best_val = float("inf")
+    best_val = float("-inf")
 
     for epoch in range(args.epoch_num):
         train_one_epoch(model, optimizer, data, epoch, args, logger, writer)
-        metrics = evaluate(model, data, args, logger, split="val")
-        # TODO: best checkpoint uses Carbon val MSE only. The paper doesn't state its selection
-        # criterion (it reports scores averaged over 3 seeds)
-        if metrics["mse_Carbon"] < best_val:
+        metrics = evaluate(model, data, args, logger, split="val", writer=writer, epoch=epoch)
+        # NOTE: best checkpoint uses the mean val R2 over the three tasks. Upstream used Carbon val MSE only,
+        # which a few extreme carbon tiles dominate. The paper doesn't state its selection criterion
+        val_score = np.mean([metrics["r2_Carbon"], metrics["r2_Population"], metrics["r2_Light"]])
+        if val_score > best_val:
             save_checkpoint(model, optimizer, epoch, os.path.join(args.checkpoint_dir, "best.pt"), best=True)
-            best_val = metrics["mse_Carbon"]
+            best_val = val_score
 
     logger.info("Training finished")
     load_checkpoint(model, os.path.join(args.checkpoint_dir, "best.pt"), args.device)

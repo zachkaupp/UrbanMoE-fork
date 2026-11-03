@@ -15,7 +15,7 @@ import sys
 
 import pandas as pd
 
-COMMON = ["--dataset", "NewYork", "--no-use_poi"]
+COMMON = ["--dataset", "NewYork", "--no-use_poi", "--epoch_num", "25", "--batch_size", "64", "--gate_threshold", "0.01"]
 NO_REGION = ["--no-use_region_embedding"]
 
 CONFIGS = {

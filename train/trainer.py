@@ -44,7 +44,7 @@ def train_one_epoch(model, optimizer, data, epoch, args, logger, writer=None):
     logger.info(f"Epoch {epoch} average loss: {mse_meter.avg:.5f}")
 
 
-def evaluate(model, data, args, logger, split="val"):
+def evaluate(model, data, args, logger, split="val", writer=None, epoch=None):
     device = args.device
     model.eval()
     dataloader = data[f"{split}_loader"]
@@ -61,4 +61,7 @@ def evaluate(model, data, args, logger, split="val"):
     all_y, all_pred = np.concatenate(all_y), np.concatenate(all_pred)
     metrics = compute_multitask_metrics(all_y, all_pred, data["mean"], data["std"])
     logger.info(f"{split.capitalize()} metrics: {metrics}")
+    if writer is not None:
+        for name, value in metrics.items():
+            writer.add_scalar(f"{split}/{name}", value, epoch)
     return metrics

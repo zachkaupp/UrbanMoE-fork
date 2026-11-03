@@ -35,6 +35,8 @@ def create_args():
     parser.add_argument("--num_all_shared_experts", type=int, default=4)
     parser.add_argument("--num_pair_shared_experts", type=int, default=2)
     parser.add_argument("--num_task_experts", type=int, default=8)
+    parser.add_argument("--gate_threshold", type=float, default=0.0,
+                        help="gate weights below this are zeroed (paper's epsilon, best at 0.01)")
 
 
     parser.add_argument("--lr", type=float, default=3e-4)

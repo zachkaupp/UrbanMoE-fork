@@ -134,12 +134,13 @@ class UrbanMoE_Regression(nn.Module):
         branch_outputs = {name: [] for name in self.branches}
         task_pairs = [(i, j) for i in range(self.num_tasks) for j in range(i + 1, self.num_tasks)]
 
-        # TODO: threshold=0 keeps every expert, so the gating is dense. The paper (Eq. 5, App. C)
-        # zeroes gate weights <= eps and finds eps=0.01 best; eps=0 is reported as "still competitive"
+        # NOTE: --gate_threshold defaults to 0, which keeps every expert, so the gating is dense. The paper
+        # (Eq. 5, App. C) zeroes gate weights <= eps and finds eps=0.01 best; eps=0 is "still competitive".
+        # Unlike Eq. 5, sparse_softmax renormalizes the kept weights to sum to 1
         for task_idx in range(self.num_tasks):
             for name in self.branches:
                 gate = torch.einsum("bi,ie->be", fused[name], self.gate_kernels[name][task_idx]) + self.gate_biases[name][task_idx]
-                gate = self.sparse_softmax(gate, mode="threshold", threshold=0)
+                gate = self.sparse_softmax(gate, mode="threshold", threshold=args.gate_threshold)
                 branch_outputs[name].append(
                     self._aggregate_experts(task_idx, gate, fused[name], self.experts[name], task_pairs))
 
