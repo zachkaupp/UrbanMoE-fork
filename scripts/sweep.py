@@ -15,17 +15,15 @@ import sys
 
 import pandas as pd
 
-COMMON = ["--dataset", "NewYork", "--no-use_poi", "--epoch_num", "25", "--batch_size", "64", "--gate_threshold", "0.01"]
+COMMON = ["--dataset", "NewYork", "--no-use_poi", "--epoch_num", "40", "--batch_size", "64", "--gate_threshold", "0.01"]
 NO_REGION = ["--no-use_region_embedding"]
 
 CONFIGS = {
-    "image_text_region": ["--modalities", "image", "text"],
-    "image_text": ["--modalities", "image", "text", *NO_REGION],
-    "image_text_aef": ["--modalities", "image", "text", "alphaearth", *NO_REGION],
-    "image_text_cc": ["--modalities", "image", "text", "contextual_count", *NO_REGION],
-    "aef_text": ["--modalities", "alphaearth", "text", *NO_REGION],
-    "image_cc": ["--modalities", "image", "contextual_count", *NO_REGION],
-    "aef_cc": ["--modalities", "alphaearth", "contextual_count", *NO_REGION],
+    "image": ["--modalities", "image", *NO_REGION],
+    "text": ["--modalities", "text", *NO_REGION],
+    "aef": ["--modalities", "alphaearth", *NO_REGION],
+    "cc": ["--modalities", "contextual_count", *NO_REGION],
+    "region": ["--modalities", "region", *NO_REGION],
 }
 
 

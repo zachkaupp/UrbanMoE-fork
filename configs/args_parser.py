@@ -15,7 +15,7 @@ def create_args():
                         help="val_dataset_ratio")
 
     parser.add_argument("--modalities", type=str, nargs="+", default=["image", "text"],
-                        choices=["image", "text", "alphaearth", "s2vec", "contextual_count"],
+                        choices=["image", "text", "alphaearth", "s2vec", "contextual_count", "region"],
                         help="one branch of experts per modality; the embeddings only exist for NewYork")
     parser.add_argument("--embedding_dir", type=str, default="data/embeddings/",
                         help="holds <dataset>_<modality>.csv for each embedding modality")

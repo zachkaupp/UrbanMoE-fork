@@ -12,8 +12,9 @@ class UrbanMoE_Regression(nn.Module):
         self.num_tasks = args.num_tasks
         self.branches = list(args.modalities)
 
+        # the region embedding is appended to every other branch (--use_region_embedding) and/or is a branch of its own
         self.region_embedding = None
-        if args.use_region_embedding:
+        if args.use_region_embedding or 'region' in self.branches:
             self.region_embedding = nn.Embedding(
                 num_embeddings=args.num_regions,
                 embedding_dim=args.region_embedding_dim,
@@ -86,8 +87,10 @@ class UrbanMoE_Regression(nn.Module):
         modality_dim = {
             'image': args.img_embedding_dim,
             'text': args.text_embedding_dim,
+            'region': args.region_embedding_dim,
         }.get(name) or args.embedding_dims[name]
-        return (modality_dim + (args.region_embedding_dim if args.use_region_embedding else 0)
+        appended_region = args.use_region_embedding and name != 'region'
+        return (modality_dim + (args.region_embedding_dim if appended_region else 0)
                 + (args.output_feature_dim if args.use_poi else 0))
 
     def sparse_softmax(self, logits, mode="topk", k=2, threshold=0.02):
@@ -114,8 +117,11 @@ class UrbanMoE_Regression(nn.Module):
         return self.clip.encode_text(values)
 
     def forward(self, args, inputs, region_ids=None, targets=None, poi_features=None):
+        region_embeds = None
+        if self.region_embedding is not None:
+            region_embeds = self.region_embedding(region_ids)
         # image and text arrive as CLIP features, encoded once before training (main.encode_clip_features)
-        features = {name: inputs[name] for name in self.branches}
+        features = {name: region_embeds if name == 'region' else inputs[name] for name in self.branches}
         reference = features[self.branches[0]]
 
         if poi_features is not None and self.poi_projection is not None:
@@ -123,12 +129,11 @@ class UrbanMoE_Regression(nn.Module):
             poi_emb = self.poi_projection(poi_features)
             features = {name: torch.cat([feature, poi_emb], dim=1) for name, feature in features.items()}
 
-        if self.region_embedding is None:
+        if not args.use_region_embedding:
             fused = features
         else:
-            region_embeds = self.region_embedding(region_ids) if region_ids is not None else \
-                torch.zeros(len(reference), self.region_embedding.embedding_dim, device=reference.device)
-            fused = {name: torch.cat([feature, region_embeds], dim=1) for name, feature in features.items()}
+            fused = {name: feature if name == 'region' else torch.cat([feature, region_embeds], dim=1)
+                     for name, feature in features.items()}
 
         branch_outputs = {name: [] for name in self.branches}
         task_pairs = [(i, j) for i in range(self.num_tasks) for j in range(i + 1, self.num_tasks)]

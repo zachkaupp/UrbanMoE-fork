@@ -21,3 +21,6 @@ RemoteCLIP-ViT-L-14.pt
 
 # Generated embeddings
 data/embeddings*/
+
+# Sweep output
+sweep_results.csv

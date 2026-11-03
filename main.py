@@ -54,7 +54,7 @@ def create_datasets(args, transform, tokenizer):
     mean = [np.mean(train_df[args.indicator1]), np.mean(train_df[args.indicator2]), np.mean(train_df[args.indicator3])]
     std = [np.std(train_df[args.indicator1]), np.std(train_df[args.indicator2]), np.std(train_df[args.indicator3])]
 
-    embedding_modalities = [m for m in args.modalities if m not in ("image", "text")]
+    embedding_modalities = [m for m in args.modalities if m not in ("image", "text", "region")]
     if embedding_modalities and args.dataset != "NewYork":
         raise ValueError(f"{embedding_modalities} embeddings only exist for NewYork")
     embeddings = {name: load_embedding(args, name, df, train_df) for name in embedding_modalities}
