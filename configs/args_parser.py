@@ -1,6 +1,13 @@
 import argparse
 import torch
 
+# task name: (label column, metric name)
+TASKS = {
+    "carbon": ("c_value", "Carbon"),
+    "population": ("pop_value", "Population"),
+    "light": ("light_value", "Light"),
+}
+
 
 def create_args():
     parser = argparse.ArgumentParser()
@@ -24,7 +31,8 @@ def create_args():
     parser.add_argument("--text_embedding_dim", type=int, default=768)
     parser.add_argument("--region_embedding_dim", type=int, default=6)
     parser.add_argument("--num_regions", type=int, default=1848)
-    parser.add_argument("--num_tasks", type=int, default=3)
+    parser.add_argument("--tasks", type=str, nargs="+", default=list(TASKS), choices=list(TASKS),
+                        help="labels to predict, one output head each; sets the number of tasks")
     parser.add_argument("--output_feature_dim", type=int, default=32)
     parser.add_argument("--hidden_num", type=int, default=8)
     parser.add_argument("--activation", type=str, default="relu",
@@ -54,14 +62,11 @@ def create_args():
                         default="checkpoint/")
 
 
-    parser.add_argument("--indicator1", type=str, default="c_value")
-    parser.add_argument("--indicator2", type=str, default="pop_value")
-    parser.add_argument("--indicator3", type=str, default="light_value")
-
-
     parser.add_argument("--use_poi", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--poi_dim", type=int, default=0)
 
     parser.add_argument("--use_region_embedding", action=argparse.BooleanOptionalAction, default=True)
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    args.num_tasks = len(args.tasks)
+    return args

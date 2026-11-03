@@ -18,12 +18,11 @@ def compute_all_metrics(y_true, y_pred):
     return metrics
 
 
-def compute_multitask_metrics(y_true, y_pred, mean, std):
+def compute_multitask_metrics(y_true, y_pred, mean, std, names):
     y_true = y_true * std + mean
     y_pred = y_pred * std + mean
     y_true, y_pred = y_true.T, y_pred.T
 
-    names = ["Carbon", "Population", "Light"]
     metrics = {}
     for i, name in enumerate(names):
         m = compute_all_metrics(y_true[i], y_pred[i])

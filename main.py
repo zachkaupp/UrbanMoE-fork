@@ -1,6 +1,6 @@
 import os
 import torch
-from configs.args_parser import create_args
+from configs.args_parser import TASKS, create_args
 from data.data_utils import set_random_seed, count_all_parameters, count_trainable_parameters
 from data.dataset_clip import getDataset
 from models.urbanmoe_regression import UrbanMoE_Regression
@@ -51,8 +51,9 @@ def create_datasets(args, transform, tokenizer):
 
     train_df, val_df, test_df = df[:train_end], df[train_end:val_end], df[val_end:]
 
-    mean = [np.mean(train_df[args.indicator1]), np.mean(train_df[args.indicator2]), np.mean(train_df[args.indicator3])]
-    std = [np.std(train_df[args.indicator1]), np.std(train_df[args.indicator2]), np.std(train_df[args.indicator3])]
+    label_columns = [TASKS[task][0] for task in args.tasks]
+    mean = [np.mean(train_df[column]) for column in label_columns]
+    std = [np.std(train_df[column]) for column in label_columns]
 
     embedding_modalities = [m for m in args.modalities if m not in ("image", "text", "region")]
     if embedding_modalities and args.dataset != "NewYork":
@@ -62,7 +63,8 @@ def create_datasets(args, transform, tokenizer):
 
     dataset_args = (args.dataset,)
     dataset_kwargs = dict(transform=transform, tokenizer=tokenizer, is_test=False, mean=mean, std=std,
-                          poi_path=poi_path, modalities=args.modalities, embeddings=embeddings)
+                          poi_path=poi_path, modalities=args.modalities, embeddings=embeddings,
+                          label_columns=label_columns)
     train_set = getDataset(*dataset_args, df_data=train_df, **dataset_kwargs)
     val_set = getDataset(*dataset_args, df_data=val_df, **dataset_kwargs)
     test_set = getDataset(*dataset_args, df_data=test_df, **dataset_kwargs)
@@ -121,9 +123,9 @@ def main():
     for epoch in range(args.epoch_num):
         train_one_epoch(model, optimizer, data, epoch, args, logger, writer)
         metrics = evaluate(model, data, args, logger, split="val", writer=writer, epoch=epoch)
-        # NOTE: best checkpoint uses the mean val R2 over the three tasks. Upstream used Carbon val MSE only,
+        # NOTE: best checkpoint uses the mean val R2 over the tasks. Upstream used Carbon val MSE only,
         # which a few extreme carbon tiles dominate. The paper doesn't state its selection criterion
-        val_score = np.mean([metrics["r2_Carbon"], metrics["r2_Population"], metrics["r2_Light"]])
+        val_score = np.mean([metrics[f"r2_{TASKS[task][1]}"] for task in args.tasks])
         if val_score > best_val:
             save_checkpoint(model, optimizer, epoch, os.path.join(args.checkpoint_dir, "best.pt"), best=True)
             best_val = val_score

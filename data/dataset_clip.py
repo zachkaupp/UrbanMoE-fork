@@ -20,6 +20,7 @@ class getDataset(Dataset):
         poi_normalization='sum',
         modalities=("image", "text"),
         embeddings=None,
+        label_columns=("c_value", "pop_value", "light_value"),
     ):
         super().__init__()
         self.transform = transform
@@ -60,12 +61,9 @@ class getDataset(Dataset):
                 self.embedding_features[name].append(table.loc[region + ".csv"].to_numpy(dtype=np.float32))
 
             if is_test:
-                self.y.append([0.0, 0.0, 0.0])
+                self.y.append([0.0] * len(label_columns))
             else:
-                C = (row["c_value"] - mean[0]) / std[0]
-                pop = (row["pop_value"] - mean[1]) / std[1]
-                light = (row["light_value"] - mean[2]) / std[2]
-                self.y.append([C, pop, light])
+                self.y.append([(row[column] - m) / s for column, m, s in zip(label_columns, mean, std)])
 
             self.region_labels.append(region)
 

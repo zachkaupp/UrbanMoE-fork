@@ -17,6 +17,10 @@ import pandas as pd
 
 COMMON = ["--dataset", "NewYork", "--no-use_poi", "--epoch_num", "40", "--batch_size", "64", "--gate_threshold", "0.01"]
 NO_REGION = ["--no-use_region_embedding"]
+# added to match the number of experts in the paper's single-task model (UrbanMoE (ST), Section 3.3: 16 experts).
+# With one task the 4 pair-shared experts drop out, leaving 4 shared + 8 task-specific = 12, so this adds 4.
+# Use with one task, e.g. [*SINGLE_TASK_EXPERTS, "--tasks", "carbon"]
+SINGLE_TASK_EXPERTS = ["--num_task_experts", "12"]
 
 CONFIGS = {
     "image": ["--modalities", "image", *NO_REGION],

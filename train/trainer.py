@@ -1,6 +1,7 @@
 import torch
 import time
 from tqdm import tqdm
+from configs.args_parser import TASKS
 from .metrics import compute_multitask_metrics
 
 
@@ -59,7 +60,8 @@ def evaluate(model, data, args, logger, split="val", writer=None, epoch=None):
 
     import numpy as np
     all_y, all_pred = np.concatenate(all_y), np.concatenate(all_pred)
-    metrics = compute_multitask_metrics(all_y, all_pred, data["mean"], data["std"])
+    names = [TASKS[task][1] for task in args.tasks]
+    metrics = compute_multitask_metrics(all_y, all_pred, data["mean"], data["std"], names)
     logger.info(f"{split.capitalize()} metrics: {metrics}")
     if writer is not None:
         for name, value in metrics.items():
