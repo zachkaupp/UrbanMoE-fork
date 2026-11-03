@@ -22,12 +22,29 @@ NO_REGION = ["--no-use_region_embedding"]
 # Use with one task, e.g. [*SINGLE_TASK_EXPERTS, "--tasks", "carbon"]
 SINGLE_TASK_EXPERTS = ["--num_task_experts", "12"]
 
-CONFIGS = {
+TASKS = ("carbon", "population", "light")
+
+# multi-task configs (all tasks)
+INPUTS = {
+    "image_text_region": ["--modalities", "image", "text"],
+    "image_text": ["--modalities", "image", "text", *NO_REGION],
+    "image_text_aef": ["--modalities", "image", "text", "alphaearth", *NO_REGION],
+    "image_text_cc": ["--modalities", "image", "text", "contextual_count", *NO_REGION],
+    "aef_text": ["--modalities", "alphaearth", "text", *NO_REGION],
+    "image_cc": ["--modalities", "image", "contextual_count", *NO_REGION],
+    "aef_cc": ["--modalities", "alphaearth", "contextual_count", *NO_REGION],
     "image": ["--modalities", "image", *NO_REGION],
     "text": ["--modalities", "text", *NO_REGION],
     "aef": ["--modalities", "alphaearth", *NO_REGION],
     "cc": ["--modalities", "contextual_count", *NO_REGION],
     "region": ["--modalities", "region", *NO_REGION],
+}
+
+# each multi-task config, plus a single-task model of it for every task
+CONFIGS = {
+    **INPUTS,
+    **{f"{name}_{task}": [*args, *SINGLE_TASK_EXPERTS, "--tasks", task]
+       for name, args in INPUTS.items() for task in TASKS},
 }
 
 
