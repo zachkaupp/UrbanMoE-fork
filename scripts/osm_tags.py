@@ -1,38 +1,14 @@
-"""Wide OSM tag filter for the embedding scripts. A value of True keeps every value of that key."""
+"""OSM tag filter for the embedding scripts. A value of True keeps every value of that key."""
+from srai.loaders.osm_loaders.filters import BASE_OSM_GROUPS_FILTER, GEOFABRIK_LAYERS, merge_osm_tags_filter
 
-# TODO: this is a deliberately wide first pass; decide the final set of keys/values to include
+# TODO(human): confirm this is an acceptable stand-in for S2Vec's features. The S2Vec paper (Choudhury et al.) uses
+# Google Maps POI categories plus traffic infrastructure counts (116 features in total) and does not publish the list;
+# it only says the taxonomy "has considerable overlap" with OSM. This is srai's base OSM groups (18 groups, 172
+# key=value pairs, but keys set to True such as shop expand to every value) plus Geofabrik's traffic and road layers.
+ROAD_LAYERS = ("traffic", "major_roads", "minor_roads", "highway_links", "very_small_roads",
+               "paths_unsuitable_for_cars")
 
-OSM_TAGS = {
-    # points of interest
-    "amenity": True,
-    "shop": True,
-    "office": True,
-    "tourism": True,
-    "historic": True,
-    "leisure": True,
-    "sport": True,
-    "healthcare": True,
-    "craft": True,
-    "emergency": True,
-    "military": True,
-    # industry and energy (large point sources of emissions)
-    "power": True,
-    "man_made": True,
-    "industrial": True,
-    "telecom": True,
-    # transport
-    "aeroway": True,
-    "railway": True,
-    "public_transport": True,
-    "highway": [
-        "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
-        "secondary", "secondary_link", "tertiary", "tertiary_link", "residential",
-        "service", "bus_stop", "traffic_signals",
-    ],
-    # land cover and buildings
-    "landuse": True,
-    "natural": True,
-    "water": True,
-    "waterway": True,
-    "building": True,
-}
+OSM_TAGS = merge_osm_tags_filter([
+    BASE_OSM_GROUPS_FILTER,
+    {layer: GEOFABRIK_LAYERS[layer] for layer in ROAD_LAYERS},
+])

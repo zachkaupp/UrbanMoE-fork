@@ -42,7 +42,7 @@ This fits how the paper's carbon source (ODIAC) places emissions, using power pl
 
 ## 🗺️ OSM embeddings
 
-`scripts/compute_embeddings.py` writes OSM-based tile embeddings (SRAI) to `data/embeddings/`. Not yet wired into `main.py`.
+`scripts/compute_embeddings.py` writes OSM-based tile embeddings (SRAI) to `data/embeddings/`. `main.py` uses them as extra branches via `--modalities` (e.g. `--modalities text alphaearth s2vec`).
 
 ```
 uv run python scripts/compute_embeddings.py --dataset NewYork --embedder s2vec --train_region northeast

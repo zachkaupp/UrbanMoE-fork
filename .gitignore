@@ -20,4 +20,4 @@ data/shanghai_merged_normalized.csv
 RemoteCLIP-ViT-L-14.pt
 
 # Generated embeddings
-data/embeddings/
+data/embeddings*/

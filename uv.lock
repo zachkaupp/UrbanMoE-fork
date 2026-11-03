@@ -2773,7 +2773,7 @@ wheels = [
 [[package]]
 name = "srai"
 version = "0.10.2"
-source = { git = "https://github.com/zachkaupp/srai-fork#2cb16e201a546e81081acf99bd07924dea198ffe" }
+source = { git = "https://github.com/zachkaupp/srai-fork#10f7f144402ef66fec2d5a2bc26acf93fa77c5ef" }
 dependencies = [
     { name = "geopandas" },
     { name = "h3" },
