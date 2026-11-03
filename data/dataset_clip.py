@@ -127,6 +127,15 @@ class getDataset(Dataset):
         except Exception:
             return ""
 
+    def use_features(self, name, features):
+        """Serve precomputed features for the image or text modality instead of the raw tensors."""
+        self.embedding_features[name] = features
+        self.modalities = [m for m in self.modalities if m != name]
+        if name == "image":
+            self.img_tensors = []
+        else:
+            self.text_tensors = []
+
     def __len__(self):
         return len(self.y)
 

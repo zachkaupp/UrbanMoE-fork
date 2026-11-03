@@ -104,19 +104,18 @@ class UrbanMoE_Regression(nn.Module):
         probs = probs / (probs.sum(dim=-1, keepdim=True) + 1e-12)
         return probs
 
+    @torch.no_grad()
+    def encode_clip(self, name, values):
+        """CLIP features for a batch of raw images or text tokens."""
+        if name == 'image':
+            return self.clip.encode_image(values)
+        if values.dim() == 3 and values.shape[1] == 1:
+            values = values.squeeze(1)
+        return self.clip.encode_text(values)
+
     def forward(self, args, inputs, region_ids=None, targets=None, poi_features=None):
-        features = {}
-        with torch.no_grad():
-            if 'image' in self.branches:
-                features['image'] = self.clip.encode_image(inputs['image'])
-            if 'text' in self.branches:
-                texts = inputs['text']
-                if texts.dim() == 3 and texts.shape[1] == 1:
-                    texts = texts.squeeze(1)
-                features['text'] = self.clip.encode_text(texts)
-        for name in self.branches:
-            if name not in features:
-                features[name] = inputs[name]
+        # image and text arrive as CLIP features, encoded once before training (main.encode_clip_features)
+        features = {name: inputs[name] for name in self.branches}
         reference = features[self.branches[0]]
 
         if poi_features is not None and self.poi_projection is not None:

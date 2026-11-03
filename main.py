@@ -70,6 +70,21 @@ def create_datasets(args, transform, tokenizer):
     return train_set, val_set, test_set, mean, std
 
 
+def encode_clip_features(model, datasets, args):
+    """Run the frozen CLIP encoders once over every tile, so training doesn't re-encode them each epoch."""
+    model.clip.eval()
+    for dataset in datasets:
+        raw = {"image": dataset.img_tensors, "text": dataset.text_tensors}
+        for name in ("image", "text"):
+            if name not in dataset.modalities:
+                continue
+            features = []
+            for start in range(0, len(raw[name]), args.batch_size):
+                batch = torch.stack(raw[name][start:start + args.batch_size]).to(args.device)
+                features.append(model.encode_clip(name, batch).cpu())
+            dataset.use_features(name, torch.cat(features))
+
+
 def main():
     args = create_args()
     set_random_seed(args.seed)
@@ -90,6 +105,7 @@ def main():
 
     model = UrbanMoE_Regression(clip_model, args).to(args.device)
     logger.info(f"Total params: {count_all_parameters(model)} | Trainable: {count_trainable_parameters(model)}")
+    encode_clip_features(model, (train_set, val_set, test_set), args)
 
     data = {
         "train_loader": DataLoader(train_set, batch_size=args.batch_size, shuffle=True, drop_last=True),
